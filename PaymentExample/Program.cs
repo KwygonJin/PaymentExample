@@ -1,11 +1,19 @@
+using PaymentExample.Data;
+using PaymentExample.Interfaces;
+using PaymentExample.Services;
 using PaymentExample.Utility;
+using Microsoft.EntityFrameworkCore;
 using Stripe;
 
 var builder = WebApplication.CreateBuilder(args);
 
 // Add services to the container.
 builder.Services.AddControllersWithViews();
+builder.Services.AddDbContext<DatabaseContext>(options =>
+    options.UseSqlServer(builder.Configuration.GetConnectionString("sqlConnection"))
+);
 builder.Services.Configure<StripeSettings>(builder.Configuration.GetSection("StripeSettings"));
+builder.Services.AddTransient<IPaymentService, PaymentService>();
 
 var app = builder.Build();
 

@@ -3,7 +3,11 @@
 }
 
 <div>
-    <form action="/Payment/Processing" method="POST">
-      <button type="submit">Checkout</button>
+    <form action="/Payment/CreateCheckout" method="POST">
+      <button class="btn btn-primary" type="submit">Checkout</button>
+    </form>
+    <br />
+    <form action="/Payment/Invoice" method="POST">
+      <button class="btn btn-primary" type="submit">Invoice</button>
     </form>
 </div>

@@ -1,47 +1,36 @@
 ﻿using Microsoft.AspNetCore.Mvc;
+using PaymentExample.Interfaces;
 using Stripe.Checkout;
 
 namespace PaymentExample.Controllers
 {
     public class PaymentController : Controller
     {
+        private readonly IPaymentService _paymentService;
+
+        public PaymentController(IPaymentService paymentService)
+        {
+            _paymentService = paymentService;
+        }
+
         public IActionResult Index()
         {
             return View();
         }
 
         [HttpPost]
-        public IActionResult Processing()
+        public async Task<IActionResult> CreateCheckout()
         {
-            var options = new Stripe.Checkout.SessionCreateOptions
-            {
-                LineItems = new List<SessionLineItemOptions>
-                {
-                  new SessionLineItemOptions
-                  {
-                    PriceData = new SessionLineItemPriceDataOptions
-                    {
-                      UnitAmount = 2000,
-                      Currency = "usd",
-                      ProductData = new SessionLineItemPriceDataProductDataOptions
-                      {
-                        Name = "T-shirt",
-                      },
-
-                    },
-                    Quantity = 1,
-                  },
-                },
-                Mode = "payment",
-                SuccessUrl = "https://localhost:7180/Payment/Success",
-                CancelUrl = "https://localhost:7180/Payment/",
-            };
-
-            var service = new SessionService();
-            Session session = service.Create(options);
-
-            Response.Headers.Add("Location", session.Url);
+            string url = await _paymentService.CreateCheckoutAsync();
+            Response.Headers.Add("Location", url);
             return new StatusCodeResult(303);
+        }
+
+        [HttpPost]
+        public IActionResult Invoice()
+        {
+            string invoiceId = _paymentService.CreateInvoice();
+            return View("Success");
         }
 
         public IActionResult Success()
