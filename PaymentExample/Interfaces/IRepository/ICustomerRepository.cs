@@ -4,10 +4,11 @@ namespace PaymentExample.Interfaces.IRepository
 {
     public interface ICustomerRepository
     {
-        Task<IEnumerable<Customer>> GetCustomers();
-        Task<Customer> GetCustomer(int customerId);
-        Task<Customer> AddCustomer(Customer customer);
-        Task<Customer> UpdateCustomer(Customer customer);
-        void DeleteCustomer(int customerId);
+        Task<IEnumerable<Customer>> GetCustomersAsync();
+        Task<Customer> GetCustomerAsync(int customerId);
+        Task<Customer> GetCustomerByEmailAsync(string email);
+        Task<Customer> AddCustomerAsync(Customer customer);
+        void UpdateCustomer(Customer customer);
+        Task DeleteCustomerAsync(int customerId);
     }
 }

@@ -23,7 +23,8 @@ namespace PaymentExample.Controllers
         [HttpPost]
         public async Task<IActionResult> CreateCheckoutAsync()
         {
-            CheckoutViewModel checkoutViewModel = await _paymentService.CreateCheckoutAsync();
+            string customerEmail = Request.Form["customerEmail"];
+            CheckoutViewModel checkoutViewModel = await _paymentService.CreateCheckoutAsync(customerEmail);
             if (checkoutViewModel == null)
                 return View("Cancel", new ErrorViewModel
                 {
@@ -45,7 +46,8 @@ namespace PaymentExample.Controllers
         [HttpPost]
         public async Task<IActionResult> InvoiceAsync()
         {
-            InvoiceViewModel invoiceViewModel = await _paymentService.CreateInvoiceAsync();
+            string customerEmail = Request.Form["customerEmail"];
+            InvoiceViewModel invoiceViewModel = await _paymentService.CreateInvoiceAsync(customerEmail);
             if (invoiceViewModel == null)
                 return View("Cancel", new ErrorViewModel
                 {
@@ -65,39 +67,25 @@ namespace PaymentExample.Controllers
 
         [HttpPost]
         [Route("create-checkout-session")]
-        public ActionResult Create()
+        public async Task<IActionResult> CreateCheckoutSubscriptionAsync()
         {
-            var domain = "https://localhost:7180";
-
-            var priceOptions = new PriceListOptions
-            {
-                LookupKeys = new List<string> {
-                    Request.Form["lookup_key"]
-                }
-            };
-            var priceService = new PriceService();
-            StripeList<Price> prices = priceService.List(priceOptions);
-
-            var options = new SessionCreateOptions
-            {
-                LineItems = new List<SessionLineItemOptions>
+            string customerEmail = Request.Form["customerEmail"];
+            CheckoutViewModel checkoutViewModel = await _paymentService.CreateCheckoutSubscriptionAsync(customerEmail, Request.Form["lookup_key"]);
+            if (checkoutViewModel == null)
+                return View("Cancel", new ErrorViewModel
                 {
-                    new SessionLineItemOptions
-                    {
-                        Price = prices.Data[0].Id,
-                        Quantity = 1,
-                    },
-                },
-                Customer = "cus_LxvFYAhU588eDC",
-                Mode = "subscription",
-                SuccessUrl = domain + "/Payment/SuccessSubscription?session_id={CHECKOUT_SESSION_ID}",
-                CancelUrl = domain + "/Payment/Cancel",
-            };
-            var service = new SessionService();
-            Session session = service.Create(options);
+                    ErrorText = "Internal error"
+                });
 
-            Response.Headers.Add("Location", session.Url);
-            return new StatusCodeResult(303);
+            if (checkoutViewModel.IsSuccess)
+            {
+                Response.Headers.Add("Location", checkoutViewModel.Url);
+                return new StatusCodeResult(303);
+            }
+            else
+            {
+                return View("Cancel", checkoutViewModel.ErrorViewModel);
+            }
         }
 
         [Route("create-portal-session")]
@@ -125,14 +113,25 @@ namespace PaymentExample.Controllers
             return new StatusCodeResult(303);
         }
 
-        public IActionResult Success()
+        public async Task<IActionResult> Success()
         {
+            if (Request.Query["session_id"].Count > 0)
+                await _paymentService.CheckPaymentStatusAsync(Request.Query["session_id"].ToString());
             return View();
         }
 
-        public IActionResult SuccessSubscription()
-        {
-            ViewBag.sessionId = Request.Query["session_id"].ToString();
+        public async Task<IActionResult> SuccessSubscription()
+        {           
+            if (Request.Query["session_id"].Count > 0)
+            {
+                ViewBag.sessionId = Request.Query["session_id"].ToString();
+                await _paymentService.CheckPaymentStatusAsync(Request.Query["session_id"].ToString());
+            }
+            else
+            {
+                ViewBag.sessionId = "Internal error";
+            }
+
             return View();
         }
 

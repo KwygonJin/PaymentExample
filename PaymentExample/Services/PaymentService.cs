@@ -1,5 +1,6 @@
 ﻿using Microsoft.AspNetCore.Mvc;
 using PaymentExample.Interfaces;
+using PaymentExample.Interfaces.IRepository;
 using PaymentExample.Models;
 using Stripe;
 using Stripe.Checkout;
@@ -8,8 +9,48 @@ namespace PaymentExample.Services
 {
     public class PaymentService : IPaymentService
     {
-        public async Task<CheckoutViewModel> CreateCheckoutAsync()
+        private readonly IUnitOfWork _unitOfWork;
+        private string currencyDefault = "usd";
+        private string collectionMethodCheckoutPayment = "payment";
+        private string collectionMethodCheckoutSubscription = "subscription";
+        private string collectionMethodInvoice = "send_invoice";
+        private string statusPaid = "paid";
+        private int productIdDefault = 3;
+        private string priceNameDefault = "tesе_price";
+        private int daysToDieDefault = 30;
+        private int quantityDefault = 1;
+        private int unitAmountDefault = 100;
+        private string domain = "https://localhost:7180/";
+
+        public PaymentService(IUnitOfWork unitOfWork)
         {
+            _unitOfWork = unitOfWork;
+        }
+
+        public async Task<CheckoutViewModel> CreateCheckoutAsync(string email)
+        {
+            var customer = await _unitOfWork.Cusotmers.GetCustomerByEmailAsync(email);
+            if (customer == null)
+            {
+                customer = new PaymentExample.Data.Customer
+                {
+                    Name = email,
+                    Email = email,
+                    Description = email
+                };
+                await _unitOfWork.Cusotmers.AddCustomerAsync(customer);
+                await _unitOfWork.SaveAsync();
+            }
+
+            if (customer.StripeId == null)
+            {
+                var stripeCustomer = await CreateStripeCustomerAsync(customer.Email);
+                customer.StripeId = stripeCustomer.Id;
+                _unitOfWork.Cusotmers.UpdateCustomer(customer);
+                await _unitOfWork.SaveAsync();
+            }
+            var product = await _unitOfWork.Products.GetProductAsync(productIdDefault);
+
             var options = new Stripe.Checkout.SessionCreateOptions
             {
                 LineItems = new List<SessionLineItemOptions>
@@ -18,20 +59,17 @@ namespace PaymentExample.Services
                   {
                     PriceData = new SessionLineItemPriceDataOptions
                     {
-                      UnitAmount = 2000,
-                      Currency = "usd",
-                      ProductData = new SessionLineItemPriceDataProductDataOptions
-                      {
-                        Name = "T-shirt",
-                      },
-
+                      UnitAmount = unitAmountDefault,
+                      Currency = currencyDefault,
+                      Product = product.StripeId
                     },
-                    Quantity = 1,
+                    Quantity = quantityDefault,
                   },
                 },
-                Mode = "payment",
-                SuccessUrl = "https://localhost:7180/Payment/Success",
-                CancelUrl = "https://localhost:7180/Payment/Cancel",
+                Mode = this.collectionMethodCheckoutPayment,
+                Customer = customer.StripeId,
+                SuccessUrl = domain + "Payment/Success?session_id={CHECKOUT_SESSION_ID}",
+                CancelUrl = domain + "Payment/Cancel",
             };
 
             CheckoutViewModel checkoutViewModel = new CheckoutViewModel();
@@ -41,6 +79,16 @@ namespace PaymentExample.Services
                 Session session = await service.CreateAsync(options);
                 checkoutViewModel.IsSuccess = true;
                 checkoutViewModel.Url = session.Url;
+                checkoutViewModel.SessionId = session.Id;
+                checkoutViewModel.PaymentIntentId = session.PaymentIntentId;
+
+                PaymentExample.Data.Payment payment = await _unitOfWork.Payments.AddPaymentAsync(new Data.Payment { 
+                    CustomertId = customer.Id,
+                    SessionId = session.Id,
+                    PaymentId = session.PaymentIntentId,
+                    Description = product.Name
+                });
+                await _unitOfWork.SaveAsync();
             }
             catch (StripeException ex)
             {
@@ -54,22 +102,15 @@ namespace PaymentExample.Services
             return checkoutViewModel;
         }
 
-        public async Task<InvoiceViewModel> CreateInvoiceAsync()
+        public async Task<InvoiceViewModel> CreateInvoiceAsync(string email)
         {
-            string email = "Kalyan3107@gmail.com";
-            string collectionMethod = "send_invoice";
-            string productName = "test_product";
-            string priceName = "tesе_price";
-            int daysToDie = 30;
-            int unitAmount = 100;
-
             InvoiceViewModel invoiceViewModel = new InvoiceViewModel();
 
             try
             {
-                var customer = await CreaceStripeCustomerAsync(email);
-                var stripeProduct = await CreaceStripeProductAsync(productName);
-                var price = await CreaceStripePriceAsync(priceName, stripeProduct.Id, unitAmount);
+                var customer = await CreateStripeCustomerAsync(email);
+                var stripeProduct = await CreateStripeProductAsync(priceNameDefault);
+                var price = await CreateStripePriceAsync(priceNameDefault, stripeProduct.Id, unitAmountDefault);
 
                 var invoiceItemOptions = new InvoiceItemCreateOptions
                 {
@@ -84,8 +125,8 @@ namespace PaymentExample.Services
                 var invoiceOptions = new InvoiceCreateOptions
                 {
                     Customer = customer.Id,
-                    CollectionMethod = collectionMethod,
-                    DaysUntilDue = daysToDie,
+                    CollectionMethod = collectionMethodInvoice,
+                    DaysUntilDue = daysToDieDefault,
                 };
                 var invoiceService = new InvoiceService();
                 var invoice = await invoiceService.CreateAsync(invoiceOptions);
@@ -106,7 +147,79 @@ namespace PaymentExample.Services
             return invoiceViewModel;
         }
 
-        private async Task<Customer> CreaceStripeCustomerAsync(string email, string description = "Test customer to invoice")
+        public async Task<CheckoutViewModel> CreateCheckoutSubscriptionAsync(string email, string lookupKey)
+        {
+            CheckoutViewModel checkoutViewModel = new CheckoutViewModel();
+
+            try
+            {
+                var customer = await _unitOfWork.Cusotmers.GetCustomerByEmailAsync(email);
+                if (customer == null)
+                {
+                    customer = new PaymentExample.Data.Customer
+                    {
+                        Name = email,
+                        Email = email,
+                        Description = email
+                    };
+                    await _unitOfWork.Cusotmers.AddCustomerAsync(customer);
+                    await _unitOfWork.SaveAsync();
+                }
+
+                if (customer.StripeId == null)
+                {
+                    var stripeCustomer = await CreateStripeCustomerAsync(customer.Email);
+                    customer.StripeId = stripeCustomer.Id;
+                    _unitOfWork.Cusotmers.UpdateCustomer(customer);
+                    await _unitOfWork.SaveAsync();
+                }
+
+                var price = await _unitOfWork.Prices.GetPriceByLookUpAsync(lookupKey);
+
+                var options = new SessionCreateOptions
+                {
+                    LineItems = new List<SessionLineItemOptions>
+                    {
+                        new SessionLineItemOptions
+                        {
+                            Price = price.StripeId,
+                            Quantity = quantityDefault,
+                        },
+                    },
+                    Customer = customer.StripeId,
+                    Mode = collectionMethodCheckoutSubscription,
+                    SuccessUrl = domain + "Payment/SuccessSubscription?session_id={CHECKOUT_SESSION_ID}",
+                    CancelUrl = domain + "Payment/Cancel",
+                };
+                var service = new SessionService();
+                Session session = await service.CreateAsync(options);
+                checkoutViewModel.IsSuccess = true;
+                checkoutViewModel.Url = session.Url;
+                checkoutViewModel.SessionId = session.Id;
+                checkoutViewModel.PaymentIntentId = session.SubscriptionId;
+
+                PaymentExample.Data.Payment payment = await _unitOfWork.Payments.AddPaymentAsync(new Data.Payment
+                {
+                    CustomertId = customer.Id,
+                    SessionId = session.Id,
+                    PaymentId = session.PaymentIntentId,
+                    Description = price.Nickname
+                });
+                await _unitOfWork.SaveAsync();
+            }
+            catch (StripeException ex)
+            {
+                checkoutViewModel.IsSuccess = false;
+                checkoutViewModel.ErrorViewModel = new ErrorViewModel
+                {
+                    ErrorText = GetErrorTextFromStripeError(ex)
+                };
+            }
+
+            return checkoutViewModel;
+        }
+
+        public async Task<Customer> CreateStripeCustomerAsync(string email, string description = "Test customer to invoice")
         {
             var customerService = new CustomerService();
             var customerOptions = new CustomerCreateOptions
@@ -119,7 +232,7 @@ namespace PaymentExample.Services
             return stripeCustomer;
         }
 
-        private async Task<Product>  CreaceStripeProductAsync(string productName)
+        public async Task<Product>  CreateStripeProductAsync(string productName)
         {
             var productOptions = new ProductCreateOptions
             {
@@ -131,7 +244,7 @@ namespace PaymentExample.Services
             return stripeProduct;
         }
 
-        private async Task<Price> CreaceStripePriceAsync(string priceName, string stripeProductId, int unitAmount)
+        public async Task<Price> CreateStripePriceAsync(string priceName, string stripeProductId, int unitAmount)
         {
             var priceOptions = new PriceCreateOptions
             {
@@ -144,6 +257,22 @@ namespace PaymentExample.Services
             var stripePrice = await priceService.CreateAsync(priceOptions);
 
             return stripePrice;
+        }
+
+        public async Task CheckPaymentStatusAsync(string sessionId)
+        {
+            var service = new SessionService();
+            Session session = await service.GetAsync(sessionId);
+            if (session.PaymentStatus.ToLower() == statusPaid)
+            {
+                PaymentExample.Data.Payment payment = await _unitOfWork.Payments.GetPaymentBySessionAsync(sessionId);
+                if (payment != null)
+                {
+                    payment.IsSuccess = true;
+                    _unitOfWork.Payments.UpdatePayment(payment);
+                    await _unitOfWork.SaveAsync();
+                }
+            }
         }
 
         private static string GetErrorTextFromStripeError(StripeException ex)
@@ -168,7 +297,8 @@ namespace PaymentExample.Services
                     errorText = $"A payment error occurred: {ex.StripeError.Message}";
                 }
             }
-            else if (ex.StripeError.Type == "invalid_request_error"){
+            else if (ex.StripeError.Type == "invalid_request_error")
+            {
                 errorText = $"An invalid request occurred: {ex.StripeError.Message}";
             }
             else
@@ -178,5 +308,6 @@ namespace PaymentExample.Services
 
             return errorText;
         }
+
     }
 }

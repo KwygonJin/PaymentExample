@@ -4,6 +4,8 @@ using PaymentExample.Services;
 using PaymentExample.Utility;
 using Microsoft.EntityFrameworkCore;
 using Stripe;
+using PaymentExample.Interfaces.IRepository;
+using PaymentExample.Repository;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -14,6 +16,7 @@ builder.Services.AddDbContext<DatabaseContext>(options =>
 );
 builder.Services.Configure<StripeSettings>(builder.Configuration.GetSection("StripeSettings"));
 builder.Services.AddTransient<IPaymentService, PaymentService>();
+builder.Services.AddTransient<IUnitOfWork, UnitOfWork>();
 
 var app = builder.Build();
 

@@ -4,12 +4,17 @@
 
 <div>
     <form action="/Payment/CreateCheckout" method="POST">
-      <button class="btn btn-primary" type="submit">Checkout</button>
+        <input type="email" name="customerEmail" value="" placeholder="user@PaymentExample.com"/>
+        <button class="btn btn-primary" type="submit">Checkout</button>
     </form>
+
     <br />
     <form action="/Payment/Invoice" method="POST">
-      <button class="btn btn-primary" type="submit">Invoice</button>
+        <input type="email" name="customerEmail" value="" placeholder="user@PaymentExample.com"/>
+        <button class="btn btn-primary" type="submit">Invoice</button>
     </form>
+
+    <br />
     <section>
       <div class="product">
         <svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" width="14px" height="16px" viewBox="0 0 14 16" version="1.1">
@@ -26,11 +31,13 @@
         </div>
       </div>
       <form action="/create-checkout-session" method="POST">
+        <input type="email" name="customerEmail" value="" placeholder="user@PaymentExample.com"/>
         <!-- Add a hidden field with the lookup_key of your Price -->
         <input type="hidden" name="lookup_key" value="look_up_starter" />
         <button id="checkout-and-portal-button" type="submit">Buy starter</button>
       </form>
 
+      <br />
       <div class="product">
         <svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" width="14px" height="16px" viewBox="0 0 14 16" version="1.1">
             <defs/>
@@ -46,6 +53,7 @@
         </div>
       </div>
       <form action="/create-checkout-session" method="POST">
+          <input type="email" name="customerEmail" value="" placeholder="user@PaymentExample.com"/>
         <!-- Add a hidden field with the lookup_key of your Price -->
         <input type="hidden" name="lookup_key" value="look_up_plan" />
         <button id="checkout-and-portal-button" type="submit">Buy premium</button>
