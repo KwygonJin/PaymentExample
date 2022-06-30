@@ -1,5 +1,6 @@
 ﻿using Microsoft.AspNetCore.Mvc;
 using PaymentExample.Interfaces;
+using PaymentExample.Models;
 using Stripe;
 using Stripe.Checkout;
 
@@ -7,7 +8,7 @@ namespace PaymentExample.Services
 {
     public class PaymentService : IPaymentService
     {
-        public async Task<string> CreateCheckoutAsync()
+        public async Task<CheckoutViewModel> CreateCheckoutAsync()
         {
             var options = new Stripe.Checkout.SessionCreateOptions
             {
@@ -30,75 +31,82 @@ namespace PaymentExample.Services
                 },
                 Mode = "payment",
                 SuccessUrl = "https://localhost:7180/Payment/Success",
-                CancelUrl = "https://localhost:7180/Payment/",
+                CancelUrl = "https://localhost:7180/Payment/Cancel",
             };
 
+            CheckoutViewModel checkoutViewModel = new CheckoutViewModel();
             var service = new SessionService();
-            Session session = await service.CreateAsync(options);
+            try
+            {
+                Session session = await service.CreateAsync(options);
+                checkoutViewModel.IsSuccess = true;
+                checkoutViewModel.Url = session.Url;
+            }
+            catch (StripeException ex)
+            {
+                checkoutViewModel.IsSuccess = false;
+                checkoutViewModel.ErrorViewModel = new ErrorViewModel
+                {
+                    ErrorText = GetErrorTextFromStripeError(ex)
+                };
+            }
 
-            return session.Url;
+            return checkoutViewModel;
         }
 
-        public string CreateInvoice()
+        public async Task<InvoiceViewModel> CreateInvoiceAsync()
         {
             string email = "Kalyan3107@gmail.com";
             string collectionMethod = "send_invoice";
             string productName = "test_product";
             string priceName = "tesе_price";
             int daysToDie = 30;
+            int unitAmount = 100;
 
-            var customerOptions = new CustomerCreateOptions
+            InvoiceViewModel invoiceViewModel = new InvoiceViewModel();
+
+            try
             {
-                Email = email,
-                Description = "Test customer to invoice",
-            };
-            var customerService = new CustomerService();
-            var stripeCustomer = customerService.Create(customerOptions);
-            string customerId = stripeCustomer.Id;
+                var customer = await CreaceStripeCustomerAsync(email);
+                var stripeProduct = await CreaceStripeProductAsync(productName);
+                var price = await CreaceStripePriceAsync(priceName, stripeProduct.Id, unitAmount);
 
-            var productOptions = new ProductCreateOptions
+                var invoiceItemOptions = new InvoiceItemCreateOptions
+                {
+                    Customer = customer.Id,
+                    Price = price.Id
+                };
+
+                var invoiceItemService = new InvoiceItemService();
+                await invoiceItemService.CreateAsync(invoiceItemOptions);
+
+                // Create an Invoice
+                var invoiceOptions = new InvoiceCreateOptions
+                {
+                    Customer = customer.Id,
+                    CollectionMethod = collectionMethod,
+                    DaysUntilDue = daysToDie,
+                };
+                var invoiceService = new InvoiceService();
+                var invoice = await invoiceService.CreateAsync(invoiceOptions);
+
+                await invoiceService.SendInvoiceAsync(invoice.Id);
+
+                invoiceViewModel.IsSuccess = true;
+            }
+            catch (StripeException ex)
             {
-                Name = productName
-            };
-            var productService = new ProductService();
-            var stripeProduct = productService.Create(productOptions);
+                invoiceViewModel.IsSuccess = false;
+                invoiceViewModel.ErrorViewModel = new ErrorViewModel
+                {
+                    ErrorText = GetErrorTextFromStripeError(ex)
+                };
+            }
 
-            var priceOptions = new PriceCreateOptions
-            {
-                Active = true,
-                Currency = "USD",
-                Nickname = priceName,
-                Product = stripeProduct.Id,
-                UnitAmount = 100
-            };
-            var priceService = new PriceService();
-            var stripePrice = priceService.Create(priceOptions);
-            string priceId = stripePrice.Id;
-
-            var invoiceItemOptions = new InvoiceItemCreateOptions
-            {
-                Customer = customerId,
-                Price = priceId,
-            };
-
-            var invoiceItemService = new InvoiceItemService();
-            invoiceItemService.Create(invoiceItemOptions);
-            // Create an Invoice
-            var invoiceOptions = new InvoiceCreateOptions
-            {
-                Customer = customerId,
-                CollectionMethod = collectionMethod,
-                DaysUntilDue = daysToDie,
-            };
-            var invoiceService = new InvoiceService();
-            var invoice = invoiceService.Create(invoiceOptions);
-                
-            invoiceService.SendInvoice(invoice.Id);
-
-            return invoice.Id;
+            return invoiceViewModel;
         }
 
-        private Customer FindOrCreaceStripeCustomer(string email, string description = "Test customer to invoice")
+        private async Task<Customer> CreaceStripeCustomerAsync(string email, string description = "Test customer to invoice")
         {
             var customerService = new CustomerService();
             var customerOptions = new CustomerCreateOptions
@@ -106,9 +114,69 @@ namespace PaymentExample.Services
                 Email = email,
                 Description = description
             };
-            var stripeCustomer = customerService.Create(customerOptions);
+            var stripeCustomer = await customerService.CreateAsync(customerOptions);
 
             return stripeCustomer;
+        }
+
+        private async Task<Product>  CreaceStripeProductAsync(string productName)
+        {
+            var productOptions = new ProductCreateOptions
+            {
+                Name = productName
+            };
+            var productService = new ProductService();
+            var stripeProduct = await productService.CreateAsync(productOptions);
+
+            return stripeProduct;
+        }
+
+        private async Task<Price> CreaceStripePriceAsync(string priceName, string stripeProductId, int unitAmount)
+        {
+            var priceOptions = new PriceCreateOptions
+            {
+                Currency = "usd",
+                Nickname = priceName,
+                Product = stripeProductId,
+                UnitAmount = unitAmount
+            };
+            var priceService = new PriceService();
+            var stripePrice = await priceService.CreateAsync(priceOptions);
+
+            return stripePrice;
+        }
+
+        private static string GetErrorTextFromStripeError(StripeException ex)
+        {
+            string errorText = "";
+            if (ex.StripeError.Type == "card_error")
+            {
+                if (ex.StripeError.PaymentIntent.Charges.Data[0].Outcome.Type == "blocked")
+                {
+                    errorText = "Payment blocked for suspected fraud.";
+                }
+                else if (ex.StripeError.Code == "card_declined")
+                {
+                    errorText = "Declined by the issuer.";
+                }
+                else if (ex.StripeError.Code == "expired_card")
+                {
+                    errorText = "Card expired.";
+                }
+                else
+                {
+                    errorText = $"A payment error occurred: {ex.StripeError.Message}";
+                }
+            }
+            else if (ex.StripeError.Type == "invalid_request_error"){
+                errorText = $"An invalid request occurred: {ex.StripeError.Message}";
+            }
+            else
+            {
+                errorText = $"Another problem occurred, maybe unrelated to Stripe. Error: {ex.StripeError.Message}";
+            }
+
+            return errorText;
         }
     }
 }

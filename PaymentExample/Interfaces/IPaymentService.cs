@@ -1,11 +1,12 @@
 ﻿using Microsoft.AspNetCore.Mvc;
+using PaymentExample.Models;
 
 namespace PaymentExample.Interfaces
 {
     public interface IPaymentService
     {
-        public Task<string> CreateCheckoutAsync();
+        public Task<CheckoutViewModel> CreateCheckoutAsync();
 
-        public string CreateInvoice();
+        public Task<InvoiceViewModel> CreateInvoiceAsync();
     }
 }
