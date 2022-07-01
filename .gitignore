@@ -42,3 +42,5 @@ msbuild.wrn
 /HotelListing/appsettings.Development.json
 /.vs
 /HotelListing/obj
+/PaymentExample/appsettings.json
+/PaymentExample/appsettings.Development.json
